@@ -1,21 +1,57 @@
+// SPDX-License-Identifier: UNLICENSED
 // contracts/Exchange.sol
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "hardhat/console.sol";
 
-contract Exchange {
+contract Exchange is ERC20 {
     address public tokenAddress;
 
-    constructor(address token_) {
+    constructor(address token_) ERC20("Zuniswap-V1", "ZUNI-V1") {
         require(token_ != address(0), "invalid token address");
-
+        _mint(msg.sender, 0);
         tokenAddress = token_;
     }
 
-    function addLiquidity(uint256 tokenAmount) public payable {
-        IERC20 token = IERC20(tokenAddress);
-        token.transferFrom(msg.sender, address(this), tokenAmount);
+    function addLiquidity(
+        uint256 tokenAmount_
+    ) public payable returns (uint256) {
+        if (getReserve() == 0) {
+            IERC20 token = IERC20(tokenAddress);
+            token.transferFrom(msg.sender, address(this), tokenAmount_);
+
+            uint256 liquidity = address(this).balance;
+            _mint(msg.sender, liquidity);
+            return liquidity;
+        } else {
+            uint256 ethReserve = address(this).balance - msg.value;
+            uint256 tokenReserve = getReserve();
+            uint256 tokenAmount = (msg.value * tokenReserve) / ethReserve;
+            require(tokenAmount_ >= tokenAmount, "insufficient token amount");
+            IERC20 token = IERC20(tokenAddress);
+            token.transferFrom(msg.sender, address(this), tokenAmount);
+
+            uint256 liquidity = (totalSupply() * msg.value) / ethReserve;
+            _mint(msg.sender, liquidity);
+            return liquidity;
+        }
+    }
+
+    function removeLiquidity(
+        uint256 amount_
+    ) public returns (uint256, uint256) {
+        require(amount_ > 0, "invalid amount");
+
+        uint256 ethAmount = (address(this).balance * amount_) / totalSupply();
+        uint256 tokenAmount = (getReserve() * amount_) / totalSupply();
+
+        _burn(msg.sender, amount_);
+        payable(msg.sender).transfer(ethAmount);
+        IERC20(tokenAddress).transfer(msg.sender, tokenAmount);
+
+        return (ethAmount, tokenAmount);
     }
 
     function getReserve() public view returns (uint256) {
@@ -38,7 +74,11 @@ contract Exchange {
         // console.log(inputAmount, inputReserve, outputReserve);
         require(inputReserve > 0 && outputReserve > 0, "invalid reserves");
 
-        return (inputAmount * outputReserve) / (inputReserve + inputAmount);
+        uint256 inputAmountFeeDeducted = inputAmount * 99;
+        uint256 numerator = inputAmountFeeDeducted * outputReserve;
+        uint256 denominator = (inputReserve * 100) + inputAmountFeeDeducted;
+
+        return numerator / denominator;
     }
 
     function getTokenAmount(uint256 ethSold_) public view returns (uint256) {
