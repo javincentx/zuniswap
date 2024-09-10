@@ -102,7 +102,7 @@ contract Exchange is ERC20 {
             address(this).balance - msg.value,
             tokenReserve
         );
-        require(tokensBought >= minTokens_, "insufficient output token amount");
+        require(tokensBought >= minTokens_, "insufficient output amount");
         IERC20(tokenAddress).transfer(msg.sender, tokensBought);
     }
 
